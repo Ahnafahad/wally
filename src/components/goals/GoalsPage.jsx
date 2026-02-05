@@ -413,6 +413,7 @@ function GoalList({ goals, isPro, navigate, onSelect, accounts }) {
               background     : '#FFFFFF',
               borderRadius   : '20px 20px 0 0',
               padding        : '20px',
+              paddingBottom  : 'calc(20px + env(safe-area-inset-bottom, 0px))',
               width          : '375px',
               maxWidth       : '100%',
             }}
@@ -1052,6 +1053,7 @@ function GoalDetail({ goal, onBack, addGoalContribution }) {
               background     : '#FFFFFF',
               borderRadius   : '20px 20px 0 0',
               padding        : '20px',
+              paddingBottom  : 'calc(20px + env(safe-area-inset-bottom, 0px))',
               width          : '375px',
               maxWidth       : '100%',
             }}

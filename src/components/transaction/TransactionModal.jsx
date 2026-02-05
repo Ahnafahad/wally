@@ -121,7 +121,7 @@ export default function TransactionModal() {
         margin: '0 auto',
         left: '50%',
         transform: 'translateX(-50%)',
-        paddingBottom: '32px',
+        paddingBottom: 'calc(32px + env(safe-area-inset-bottom, 0px))',
       }}>
 
         {/* ── Header ──────────────────────────────────────────────────── */}
