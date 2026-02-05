@@ -795,7 +795,7 @@ export default function BudgetPage() {
             backgroundColor: 'rgba(0,0,0,0.4)',
             zIndex         : 100,
             display        : 'flex',
-            alignItems     : 'flex-end',
+            alignItems     : 'center',
             justifyContent : 'center',
           }}
           onClick={() => setShowAdd(false)}
@@ -804,12 +804,11 @@ export default function BudgetPage() {
           <div
             style={{
               background     : '#FFFFFF',
-              borderRadius   : '20px 20px 0 0',
+              borderRadius   : '16px',
               padding        : '20px',
-              paddingBottom  : 'calc(20px + env(safe-area-inset-bottom, 0px))',
               width          : '375px',
-              maxWidth       : '100%',
-              maxHeight      : '60vh',
+              maxWidth       : '90%',
+              maxHeight      : '70vh',
               overflowY      : 'auto',
             }}
             onClick={(e) => e.stopPropagation()}   // don't dismiss on inner click
@@ -1154,7 +1153,7 @@ export default function BudgetPage() {
             backgroundColor: 'rgba(0,0,0,0.4)',
             zIndex         : 100,
             display        : 'flex',
-            alignItems     : 'flex-end',
+            alignItems     : 'center',
             justifyContent : 'center',
           }}
           onClick={() => {
@@ -1169,12 +1168,11 @@ export default function BudgetPage() {
           <div
             style={{
               background     : '#FFFFFF',
-              borderRadius   : '20px 20px 0 0',
+              borderRadius   : '16px',
               padding        : '20px',
-              paddingBottom  : 'calc(20px + env(safe-area-inset-bottom, 0px))',
               width          : '375px',
-              maxWidth       : '100%',
-              maxHeight      : '60vh',
+              maxWidth       : '90%',
+              maxHeight      : '70vh',
               overflowY      : 'auto',
             }}
             onClick={(e) => e.stopPropagation()}

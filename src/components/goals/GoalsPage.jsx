@@ -1043,7 +1043,7 @@ function GoalDetail({ goal, onBack, addGoalContribution }) {
             backgroundColor: 'rgba(0,0,0,0.4)',
             zIndex         : 100,
             display        : 'flex',
-            alignItems     : 'flex-end',
+            alignItems     : 'center',
             justifyContent : 'center',
           }}
           onClick={() => setShowContrib(false)}
@@ -1051,11 +1051,10 @@ function GoalDetail({ goal, onBack, addGoalContribution }) {
           <div
             style={{
               background     : '#FFFFFF',
-              borderRadius   : '20px 20px 0 0',
+              borderRadius   : '16px',
               padding        : '20px',
-              paddingBottom  : 'calc(20px + env(safe-area-inset-bottom, 0px))',
               width          : '375px',
-              maxWidth       : '100%',
+              maxWidth       : '90%',
             }}
             onClick={(e) => e.stopPropagation()}
           >
