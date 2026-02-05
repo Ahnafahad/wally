@@ -32,7 +32,7 @@ export default function BottomNav() {
         width          : '100%',
         maxWidth       : '864px',
         margin         : '0 auto',
-        height         : '72px',
+        minHeight      : 'calc(72px + env(safe-area-inset-bottom, 0px))',
         background     : '#FFFFFF',
         borderTop      : '1px solid #E5E7EB',
         boxShadow      : '0 -4px 16px rgba(0, 0, 0, 0.08)',
@@ -40,7 +40,7 @@ export default function BottomNav() {
         display        : 'flex',
         justifyContent : 'space-around',
         alignItems     : 'center',
-        paddingBottom  : '16px',
+        paddingBottom  : 'calc(16px + env(safe-area-inset-bottom, 0px))',
         marginTop      : 'auto',
       }}
     >

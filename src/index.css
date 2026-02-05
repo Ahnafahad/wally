@@ -82,6 +82,7 @@ body {
 #app-frame {
   width: 100vw;
   height: 100vh;
+  height: 100dvh; /* Dynamic viewport height for mobile browsers */
   background: var(--gray-50);
   border-radius: 0;
   overflow: hidden;
@@ -97,6 +98,7 @@ body {
   #app-frame {
     width: 100vw;
     height: 100vh;
+    height: 100dvh; /* Dynamic viewport height for mobile browsers */
     border-radius: 0;
     box-shadow: none;
   }
