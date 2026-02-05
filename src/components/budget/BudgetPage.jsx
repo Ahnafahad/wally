@@ -1334,7 +1334,7 @@ export default function BudgetPage() {
                 />
 
                 {/* Action buttons */}
-                <div style={{ display: 'flex', gap: '12px' }}>
+                <div style={{ display: 'flex', gap: '12px', marginBottom: '8px' }}>
                   <button
                     onClick={() => setShowDeleteConfirm(true)}
                     style={{

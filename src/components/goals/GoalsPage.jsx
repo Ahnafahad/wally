@@ -1160,6 +1160,7 @@ function GoalDetail({ goal, onBack, addGoalContribution }) {
                 fontWeight     : 600,
                 fontFamily     : SF,
                 cursor         : 'pointer',
+                marginBottom   : '8px',
               }}
             >
               Contribute
