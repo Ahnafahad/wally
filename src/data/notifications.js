@@ -12,7 +12,7 @@ const notifications = [
   { id: 'n-8', type: 'goal', title: 'Goal Contribution Reminder', message: 'Time to contribute to your Laptop fund this month.', time: 'Sun, 9:00 AM', isRead: true, route: '/goals', icon: '💻' },
   // Earlier
   { id: 'n-9', type: 'sync', title: 'New Account Connected', message: 'BRAC Bank Mastercard has been successfully linked.', time: 'Jan 25', isRead: true, route: null, icon: '🔗' },
-  { id: 'n-10', type: 'transaction', title: 'Salary Deposited', message: '৳ 70,000 salary received in Dutch-Bangla Bank.', time: 'Jan 25', isRead: true, route: null, icon: '💵' },
+  { id: 'n-10', type: 'transaction', title: 'Salary Deposited', message: '৳ 70,000 salary received in BRAC Bank.', time: 'Jan 25', isRead: true, route: null, icon: '💵' },
   { id: 'n-11', type: 'ai', title: 'Monthly Report Ready', message: 'Your January spending report is ready. Total: ৳ 26,900.', time: 'Jan 24', isRead: true, route: '/reports', icon: '📊' },
   { id: 'n-12', type: 'credit_card', title: 'Statement Generated', message: 'BRAC Bank Mastercard statement for January is ready.', time: 'Jan 20', isRead: true, route: '/account/rafiq-brac-cc', icon: '📄' },
   { id: 'n-13', type: 'goal', title: 'Emergency Fund Update', message: 'Monthly contribution of ৳ 5,000 recorded successfully.', time: 'Jan 6', isRead: true, route: '/goals', icon: '🛡️' },

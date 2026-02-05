@@ -11,7 +11,8 @@ import React, { useState } from 'react';
 import { useApp } from '../../AppContext';
 import * as Icons from '../shared/Icons';
 import { formatCurrency, formatCompact, getCategoryColor, getCategoryEmoji } from '../../utils/formatters';
-import { getTotalBudgetLimit, getTotalBudgetSpent } from '../../utils/calculations';
+import { getTotalBudgetLimit, getTotalBudgetSpent, calculateBudgetTrends, generateBudgetRecommendations, calculateSpendingProjection, applyBudgetTemplate, calculateAverageIncome } from '../../utils/calculations';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 // ─── Shared micro-styles ─────────────────────────────────────────────────────
 const SF        = 'SF Pro Text, -apple-system, BlinkMacSystemFont, sans-serif';
@@ -37,7 +38,7 @@ const ALL_CATEGORIES = [
 ];
 
 export default function BudgetPage() {
-  const { isPro, budgets, navigate, addBudget } = useApp();
+  const { isPro, budgets, transactions, navigate, addBudget, editBudget, deleteBudget, setPendingCoachPrompt } = useApp();
 
   // ── Add-budget modal state ───────────────────────────────────────────────
   const [showAdd,      setShowAdd]      = useState(false);
@@ -45,6 +46,14 @@ export default function BudgetPage() {
   const [newLimit,     setNewLimit]     = useState('');
   const [newAlert,     setNewAlert]     = useState('80');
   const [budgetSaved,  setBudgetSaved]  = useState(false);
+  const [showTemplates, setShowTemplates] = useState(false);
+
+  // ── Edit-budget modal state ──────────────────────────────────────────────
+  const [showEdit,        setShowEdit]        = useState(false);
+  const [editingBudget,   setEditingBudget]   = useState(null);
+  const [editLimit,       setEditLimit]       = useState('');
+  const [editAlert,       setEditAlert]       = useState('');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // ── Aggregates ────────────────────────────────────────────────────────────
   const totalLimit = getTotalBudgetLimit(budgets);
@@ -56,7 +65,7 @@ export default function BudgetPage() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div style={{ backgroundColor: 'var(--gray-50)', minHeight: '100%', paddingBottom: '100px' }}>
+    <div style={{ backgroundColor: 'var(--gray-50)', minHeight: '100%', paddingBottom: '24px' }}>
 
       {/* ══════════════════════════════════════════════════════════════════════
           HEADER
@@ -276,62 +285,251 @@ export default function BudgetPage() {
       </div>
 
       {/* ══════════════════════════════════════════════════════════════════════
-          AI SUGGESTION  (Pro only)
+          BUDGET TRENDS GRAPH  (Pro only)
           ══════════════════════════════════════════════════════════════════════ */}
-      {isPro && (
-        <div style={{ padding: '0 24px 20px' }}>
-          <div
-            style={{
-              backgroundColor: 'var(--white)',
-              border         : '1px solid var(--gray-200)',
-              borderRadius   : 'var(--radius-lg)',
-              padding        : '18px',
-              boxShadow      : 'var(--shadow-card)',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-              {/* W circle */}
-              <div
-                style={{
-                  width: '28px',
-                  height: '28px',
-                  borderRadius: 'var(--radius-md)',
-                  background: 'linear-gradient(135deg, var(--cyan-primary), var(--cyan-dark))',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  boxShadow: 'var(--shadow-sm)',
-                }}
-              >
+      {isPro && (() => {
+        const trendsData = calculateBudgetTrends(transactions, budgets, 6);
+
+        if (trendsData.length < 2) return null; // need at least 2 months
+
+        return (
+          <div style={{ padding: '0 24px 20px' }}>
+            <div
+              style={{
+                backgroundColor: 'var(--white)',
+                borderRadius: 'var(--radius-xl)',
+                padding: '20px',
+                boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+                <Icons.TrendingUp size={20} color="var(--cyan-primary)" strokeWidth={2} />
                 <span style={{
-                  color: 'var(--white)',
-                  fontSize: '11px',
+                  fontSize: '16px',
                   fontWeight: 700,
+                  color: 'var(--gray-900)',
                   fontFamily: SF_DISPLAY,
-                }}>W</span>
+                  letterSpacing: '-0.01em',
+                }}>
+                  Spending Trends
+                </span>
               </div>
-              <span style={{
-                fontSize: '14px',
-                fontWeight: 700,
-                color: 'var(--gray-900)',
-                fontFamily: SF,
-                letterSpacing: '-0.01em',
-              }}>
-                AI Suggestion
-              </span>
+
+              <ResponsiveContainer width="100%" height={220}>
+                <LineChart data={trendsData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--gray-200)" />
+                  <XAxis
+                    dataKey="month"
+                    tick={{ fontSize: 11, fill: 'var(--gray-600)', fontFamily: SF }}
+                    stroke="var(--gray-300)"
+                  />
+                  <YAxis
+                    tick={{ fontSize: 11, fill: 'var(--gray-600)', fontFamily: SF }}
+                    stroke="var(--gray-300)"
+                    tickFormatter={(value) => `৳${(value / 1000).toFixed(0)}k`}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: 'var(--white)',
+                      border: '1px solid var(--gray-200)',
+                      borderRadius: '8px',
+                      fontSize: '12px',
+                      fontFamily: SF,
+                    }}
+                    formatter={(value) => [`৳${value.toLocaleString('en-BD')}`, '']}
+                  />
+                  <Legend
+                    wrapperStyle={{ fontSize: '12px', fontFamily: SF }}
+                    iconType="line"
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="spent"
+                    stroke="#FF9500"
+                    strokeWidth={2.5}
+                    name="Actual Spending"
+                    dot={{ fill: '#FF9500', r: 4 }}
+                    activeDot={{ r: 6 }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="budget"
+                    stroke="#2D9CDB"
+                    strokeWidth={2}
+                    strokeDasharray="5 5"
+                    name="Budget Limit"
+                    dot={{ fill: '#2D9CDB', r: 3 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
             </div>
-            <p style={{
-              fontSize: '13px',
-              color: 'var(--gray-600)',
-              lineHeight: 1.5,
-              fontFamily: SF,
-              margin: 0,
-            }}>
-              Consider shifting ৳ 2,000 from Shopping to Education this month. Your shopping habits have steadied, and the education investment will pay off long-term.
-            </p>
           </div>
-        </div>
-      )}
+        );
+      })()}
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          AI BUDGET INSIGHTS  (Pro only)
+          ══════════════════════════════════════════════════════════════════════ */}
+      {isPro && (() => {
+        const recommendations = generateBudgetRecommendations(transactions, budgets, 3);
+
+        // Always show the section, even if no dynamic recommendations
+        return (
+          <div style={{ padding: '0 24px 20px' }}>
+            <div
+              style={{
+                backgroundColor: 'var(--white)',
+                borderRadius: 'var(--radius-xl)',
+                padding: '20px',
+                boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+              }}
+            >
+              {/* Header with logo */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+                <div
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '10px',
+                    background: 'var(--white)',
+                    border: '2px solid var(--cyan-primary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '5px',
+                  }}
+                >
+                  <img
+                    src="/assets/logo.png"
+                    alt="Wally"
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'contain',
+                    }}
+                  />
+                </div>
+                <span style={{
+                  fontSize: '16px',
+                  fontWeight: 700,
+                  color: 'var(--gray-900)',
+                  fontFamily: SF_DISPLAY,
+                  letterSpacing: '-0.01em',
+                }}>
+                  AI Budget Insights
+                </span>
+              </div>
+
+              {/* Dynamic Recommendations */}
+              {recommendations.length > 0 ? (
+                recommendations.map((rec, idx) => {
+                  const emoji = getCategoryEmoji(rec.category);
+                  return (
+                    <div key={idx} style={{
+                      marginBottom: idx < recommendations.length - 1 ? '14px' : '0',
+                      paddingBottom: idx < recommendations.length - 1 ? '14px' : '0',
+                      borderBottom: idx < recommendations.length - 1 ? '1px solid var(--gray-200)' : 'none',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                        <span style={{ fontSize: '20px', marginTop: '1px' }}>
+                          {emoji}
+                        </span>
+                        <div style={{ flex: 1 }}>
+                          <p style={{
+                            fontSize: '13px',
+                            color: 'var(--gray-700)',
+                            lineHeight: 1.5,
+                            fontFamily: SF,
+                            margin: '0 0 8px',
+                          }}>
+                            <strong style={{ color: 'var(--gray-900)', fontWeight: 600 }}>{rec.category}:</strong>{' '}
+                            {rec.reason}
+                            {rec.type !== 'create' && (
+                              <span style={{ color: 'var(--gray-900)' }}> → Suggest {formatCurrency(rec.suggested)}</span>
+                            )}
+                          </p>
+                          <button
+                            onClick={() => {
+                              const prompt = `I see you suggest ${rec.type === 'create' ? 'creating' : 'adjusting'} my ${rec.category} budget to ${formatCurrency(rec.suggested)}. Can you explain why?`;
+                              setPendingCoachPrompt(prompt);
+                              navigate('coach');
+                            }}
+                            style={{
+                              background: 'rgba(45, 156, 219, 0.08)',
+                              border: 'none',
+                              borderRadius: '6px',
+                              padding: '5px 12px',
+                              color: 'var(--cyan-primary)',
+                              fontSize: '12px',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              fontFamily: SF,
+                              transition: 'all 0.2s ease',
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = 'rgba(45, 156, 219, 0.15)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = 'rgba(45, 156, 219, 0.08)';
+                            }}
+                          >
+                            Discuss with Coach
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                // Fallback: Show static suggestion if no dynamic recommendations
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                    <span style={{ fontSize: '20px', marginTop: '1px' }}>🛍️</span>
+                    <div style={{ flex: 1 }}>
+                      <p style={{
+                        fontSize: '13px',
+                        color: 'var(--gray-700)',
+                        lineHeight: 1.5,
+                        fontFamily: SF,
+                        margin: '0 0 8px',
+                      }}>
+                        <strong style={{ color: 'var(--gray-900)', fontWeight: 600 }}>Shopping:</strong>{' '}
+                        Consider shifting ৳2,000 from Shopping to Education this month. Your shopping habits have steadied, and the education investment will pay off long-term.
+                      </p>
+                      <button
+                        onClick={() => {
+                          setPendingCoachPrompt('Why should I shift Shopping to Education?');
+                          navigate('coach');
+                        }}
+                        style={{
+                          background: 'rgba(45, 156, 219, 0.08)',
+                          border: 'none',
+                          borderRadius: '6px',
+                          padding: '5px 12px',
+                          color: 'var(--cyan-primary)',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          fontFamily: SF,
+                          transition: 'all 0.2s ease',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = 'rgba(45, 156, 219, 0.15)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = 'rgba(45, 156, 219, 0.08)';
+                        }}
+                      >
+                        Discuss with Coach
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ══════════════════════════════════════════════════════════════════════
           CATEGORY LIST
@@ -359,15 +557,54 @@ export default function BudgetPage() {
                 key={b.id}
                 style={{
                   backgroundColor: 'var(--white)',
-                  borderRadius   : 'var(--radius-lg)',
+                  borderRadius   : '14px',
                   border         : '1px solid #F3F4F6',
                   padding        : '16px',
                   boxShadow      : '0 2px 10px rgba(0,0,0,0.02)',
                   transition     : 'all 0.2s ease',
+                  position       : 'relative',
                 }}
               >
+                {/* Three-dot menu */}
+                <button
+                  onClick={() => {
+                    setEditingBudget(b);
+                    setEditLimit(String(b.limit));
+                    setEditAlert(String(b.alertThreshold || 80));
+                    setShowEdit(true);
+                  }}
+                  style={{
+                    position: 'absolute',
+                    top: '12px',
+                    right: '12px',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: '4px 8px',
+                    fontSize: '18px',
+                    color: 'var(--gray-400)',
+                    minWidth: '32px',
+                    minHeight: '32px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: '6px',
+                    transition: 'all 0.2s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'var(--gray-100)';
+                    e.currentTarget.style.color = 'var(--gray-700)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'none';
+                    e.currentTarget.style.color = 'var(--gray-400)';
+                  }}
+                >
+                  ⋮
+                </button>
+
                 {/* Top row: emoji + name + amounts */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingRight: '32px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     {/* Category icon circle */}
                     <div
@@ -429,6 +666,57 @@ export default function BudgetPage() {
                     }}
                   />
                 </div>
+
+                {/* Predictive Alert (Pro only) */}
+                {isPro && (() => {
+                  const projection = calculateSpendingProjection(b.spent, b.limit);
+                  if (!projection) return null;
+
+                  return (
+                    <div
+                      style={{
+                        fontSize: '12px',
+                        color: '#FF9500',
+                        fontWeight: 600,
+                        fontFamily: SF,
+                        marginTop: '10px',
+                        padding: '10px',
+                        backgroundColor: 'rgba(255, 149, 0, 0.08)',
+                        borderRadius: '8px',
+                        border: '1px solid rgba(255, 149, 0, 0.2)',
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: '6px',
+                      }}
+                    >
+                      <span style={{ fontSize: '14px' }}>⚠️</span>
+                      <div style={{ flex: 1 }}>
+                        <div>At current rate, you'll exceed this budget by {formatCurrency(projection.overage)} around {projection.overageDate}</div>
+                        <button
+                          onClick={() => {
+                            setEditingBudget(b);
+                            setEditLimit(String(projection.projected));
+                            setShowEdit(true);
+                          }}
+                          style={{
+                            marginTop: '6px',
+                            background: 'rgba(255, 149, 0, 0.15)',
+                            border: 'none',
+                            borderRadius: '6px',
+                            padding: '4px 10px',
+                            color: '#FF9500',
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            fontFamily: SF,
+                          }}
+                        >
+                          Adjust Budget
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Over-90 % warning */}
                 {pct > 90 && (
@@ -528,17 +816,209 @@ export default function BudgetPage() {
             {/* Sheet header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
               <span style={{ fontSize: '16px', fontWeight: 700, color: '#1C1C1E', fontFamily: SF_DISPLAY }}>
-                Add Budget
+                {showTemplates ? 'Choose Template' : 'Add Budget'}
               </span>
               <button
-                onClick={() => setShowAdd(false)}
+                onClick={() => {
+                  if (showTemplates) {
+                    setShowTemplates(false);
+                  } else {
+                    setShowAdd(false);
+                  }
+                }}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px' }}
               >
                 <Icons.X size={20} color="#8E8E93" strokeWidth={2} />
               </button>
             </div>
 
-            {/* Category select */}
+            {/* Template selector (Pro only) */}
+            {isPro && !showTemplates && (
+              <button
+                onClick={() => setShowTemplates(true)}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  borderRadius: '10px',
+                  border: '1px dashed #2D9CDB',
+                  background: 'rgba(45, 156, 219, 0.05)',
+                  color: '#2D9CDB',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  fontFamily: SF,
+                  marginBottom: '16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                }}
+              >
+                <Icons.Sparkles size={16} color="#2D9CDB" strokeWidth={2} />
+                Use Template
+              </button>
+            )}
+
+            {/* Template grid */}
+            {showTemplates ? (
+              <div>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: '12px',
+                  marginBottom: '16px',
+                }}>
+                  {[
+                    {
+                      name: '50-30-20',
+                      title: '50-30-20 Rule',
+                      desc: 'Balanced approach',
+                      recommended: 'Best for beginners',
+                      preview: ['Needs: 50%', 'Wants: 30%', 'Savings: 20%'],
+                    },
+                    {
+                      name: 'essential',
+                      title: 'Essential Bills',
+                      desc: 'Focus on necessities',
+                      recommended: 'Best for stability',
+                      preview: ['Food: 30%', 'Bills: 15%', 'Transport: 10%'],
+                    },
+                    {
+                      name: 'aggressive',
+                      title: 'Aggressive Saver',
+                      desc: 'Maximum savings',
+                      recommended: 'Best for savers',
+                      preview: ['Food: 20%', 'Bills: 12%', 'Save: 55%'],
+                    },
+                    {
+                      name: 'balanced',
+                      title: 'Balanced Life',
+                      desc: 'Equal distribution',
+                      recommended: 'Best for variety',
+                      preview: ['8 categories', 'Equal splits', 'All bases covered'],
+                    },
+                  ].map((template) => (
+                    <div
+                      key={template.name}
+                      onClick={() => {
+                        const avgIncome = calculateAverageIncome(transactions, 3);
+                        const templateBudgets = applyBudgetTemplate(template.name, avgIncome);
+
+                        // Apply all budgets from template
+                        templateBudgets.forEach((tb) => {
+                          // Only add if not already exists
+                          const exists = budgets.find(b => b.category === tb.category);
+                          if (!exists) {
+                            addBudget({
+                              id: 'budget-template-' + Date.now() + '-' + tb.category,
+                              category: tb.category,
+                              limit: tb.limit,
+                              spent: 0,
+                              alertThreshold: 80,
+                            });
+                          }
+                        });
+
+                        setBudgetSaved(true);
+                        setTimeout(() => {
+                          setBudgetSaved(false);
+                          setShowTemplates(false);
+                          setShowAdd(false);
+                        }, 1200);
+                      }}
+                      style={{
+                        padding: '14px',
+                        borderRadius: '12px',
+                        border: '1px solid #E5E7EB',
+                        background: 'var(--white)',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = '#2D9CDB';
+                        e.currentTarget.style.background = 'rgba(45, 156, 219, 0.03)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = '#E5E7EB';
+                        e.currentTarget.style.background = 'var(--white)';
+                      }}
+                    >
+                      <div style={{
+                        fontSize: '14px',
+                        fontWeight: 700,
+                        color: 'var(--gray-900)',
+                        fontFamily: SF_DISPLAY,
+                        marginBottom: '4px',
+                      }}>
+                        {template.title}
+                      </div>
+                      <div style={{
+                        fontSize: '11px',
+                        color: 'var(--gray-500)',
+                        fontFamily: SF,
+                        marginBottom: '8px',
+                      }}>
+                        {template.desc}
+                      </div>
+                      <div style={{
+                        fontSize: '10px',
+                        color: '#2D9CDB',
+                        fontWeight: 600,
+                        fontFamily: SF,
+                        marginBottom: '8px',
+                      }}>
+                        {template.recommended}
+                      </div>
+                      {template.preview.map((item, idx) => (
+                        <div key={idx} style={{
+                          fontSize: '10px',
+                          color: 'var(--gray-600)',
+                          fontFamily: SF,
+                          marginBottom: '2px',
+                        }}>
+                          • {item}
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+
+                {budgetSaved && (
+                  <div style={{
+                    textAlign: 'center',
+                    padding: '13px',
+                    borderRadius: '12px',
+                    background: '#D4EDDA',
+                    border: '1px solid #C3E6CB',
+                  }}>
+                    <span style={{ fontSize: '15px', fontWeight: 600, color: '#155724', fontFamily: SF }}>
+                      Budgets created from template!
+                    </span>
+                  </div>
+                )}
+
+                <button
+                  onClick={() => setShowTemplates(false)}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    borderRadius: '10px',
+                    border: '1px solid #E5E7EB',
+                    background: 'var(--white)',
+                    color: 'var(--gray-700)',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    fontFamily: SF,
+                    marginTop: '12px',
+                  }}
+                >
+                  Manual Entry Instead
+                </button>
+              </div>
+            ) : (
+              <>
+                {/* Category select */}
             <label style={{ fontSize: '12px', fontWeight: 600, color: '#8E8E93', fontFamily: SF, display: 'block', marginBottom: '6px' }}>
               Category
             </label>
@@ -655,6 +1135,270 @@ export default function BudgetPage() {
               >
                 Save Budget
               </button>
+            )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          EDIT BUDGET MODAL
+          ══════════════════════════════════════════════════════════════════════ */}
+      {showEdit && editingBudget && (
+        <div
+          style={{
+            position       : 'fixed',
+            inset          : 0,
+            backgroundColor: 'rgba(0,0,0,0.4)',
+            zIndex         : 100,
+            display        : 'flex',
+            alignItems     : 'flex-end',
+            justifyContent : 'center',
+          }}
+          onClick={() => {
+            if (!showDeleteConfirm) {
+              setShowEdit(false);
+              setEditingBudget(null);
+              setShowDeleteConfirm(false);
+            }
+          }}
+        >
+          {/* Sheet */}
+          <div
+            style={{
+              background     : '#FFFFFF',
+              borderRadius   : '20px 20px 0 0',
+              padding        : '20px',
+              width          : '375px',
+              maxWidth       : '100%',
+              maxHeight      : '60vh',
+              overflowY      : 'auto',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Delete Confirmation */}
+            {showDeleteConfirm ? (
+              <>
+                <div style={{ textAlign: 'center', padding: '20px 0' }}>
+                  <div style={{ fontSize: '48px', marginBottom: '16px' }}>⚠️</div>
+                  <h3 style={{
+                    fontSize: '18px',
+                    fontWeight: 700,
+                    color: '#1C1C1E',
+                    fontFamily: SF_DISPLAY,
+                    margin: '0 0 8px',
+                  }}>
+                    Delete Budget?
+                  </h3>
+                  <p style={{
+                    fontSize: '14px',
+                    color: '#8E8E93',
+                    fontFamily: SF,
+                    margin: '0 0 24px',
+                    lineHeight: 1.5,
+                  }}>
+                    Are you sure you want to delete the {editingBudget.category} budget? This action cannot be undone.
+                  </p>
+                  <div style={{ display: 'flex', gap: '12px' }}>
+                    <button
+                      onClick={() => setShowDeleteConfirm(false)}
+                      style={{
+                        flex: 1,
+                        padding: '14px',
+                        borderRadius: '12px',
+                        border: '1px solid #E8E8E8',
+                        background: '#fff',
+                        color: '#1C1C1E',
+                        fontSize: '15px',
+                        fontWeight: 600,
+                        fontFamily: SF,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => {
+                        deleteBudget(editingBudget.id);
+                        setShowDeleteConfirm(false);
+                        setShowEdit(false);
+                        setEditingBudget(null);
+                      }}
+                      style={{
+                        flex: 1,
+                        padding: '14px',
+                        borderRadius: '12px',
+                        border: 'none',
+                        background: '#FF3B30',
+                        color: '#fff',
+                        fontSize: '15px',
+                        fontWeight: 600,
+                        fontFamily: SF,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* Sheet header */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
+                  <span style={{ fontSize: '16px', fontWeight: 700, color: '#1C1C1E', fontFamily: SF_DISPLAY }}>
+                    Edit Budget
+                  </span>
+                  <button
+                    onClick={() => {
+                      setShowEdit(false);
+                      setEditingBudget(null);
+                      setShowDeleteConfirm(false);
+                    }}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px' }}
+                  >
+                    <Icons.X size={20} color="#8E8E93" strokeWidth={2} />
+                  </button>
+                </div>
+
+                {/* Category (read-only) */}
+                <label style={{ fontSize: '12px', fontWeight: 600, color: '#8E8E93', fontFamily: SF, display: 'block', marginBottom: '6px' }}>
+                  Category
+                </label>
+                <div
+                  style={{
+                    width          : '100%',
+                    padding        : '10px 12px',
+                    borderRadius   : '10px',
+                    border         : '1px solid #E8E8E8',
+                    fontSize       : '14px',
+                    color          : '#8E8E93',
+                    fontFamily     : SF,
+                    backgroundColor: '#F5F5F5',
+                    marginBottom   : '14px',
+                    display        : 'flex',
+                    alignItems     : 'center',
+                    justifyContent : 'space-between',
+                  }}
+                >
+                  <span>{editingBudget.category}</span>
+                  <Icons.Lock size={14} color="#8E8E93" strokeWidth={2} />
+                </div>
+
+                {/* Monthly limit */}
+                <label style={{ fontSize: '12px', fontWeight: 600, color: '#8E8E93', fontFamily: SF, display: 'block', marginBottom: '6px' }}>
+                  Monthly Limit (৳)
+                </label>
+                <input
+                  type="number"
+                  placeholder="e.g. 15000"
+                  value={editLimit}
+                  onChange={(e) => setEditLimit(e.target.value)}
+                  style={{
+                    width          : '100%',
+                    padding        : '10px 12px',
+                    borderRadius   : '10px',
+                    border         : '1px solid #E8E8E8',
+                    fontSize       : '14px',
+                    color          : '#1C1C1E',
+                    fontFamily     : SF,
+                    backgroundColor: '#FAFAFA',
+                    boxSizing      : 'border-box',
+                    marginBottom   : '14px',
+                  }}
+                />
+
+                {/* Alert threshold */}
+                <label style={{ fontSize: '12px', fontWeight: 600, color: '#8E8E93', fontFamily: SF, display: 'block', marginBottom: '6px' }}>
+                  Alert at (%)
+                </label>
+                <input
+                  type="number"
+                  min="50"
+                  max="100"
+                  value={editAlert}
+                  onChange={(e) => setEditAlert(e.target.value)}
+                  style={{
+                    width          : '100%',
+                    padding        : '10px 12px',
+                    borderRadius   : '10px',
+                    border         : '1px solid #E8E8E8',
+                    fontSize       : '14px',
+                    color          : '#1C1C1E',
+                    fontFamily     : SF,
+                    backgroundColor: '#FAFAFA',
+                    boxSizing      : 'border-box',
+                    marginBottom   : '20px',
+                  }}
+                />
+
+                {/* Action buttons */}
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <button
+                    onClick={() => setShowDeleteConfirm(true)}
+                    style={{
+                      flex           : 1,
+                      padding        : '14px',
+                      borderRadius   : '12px',
+                      border         : 'none',
+                      background     : '#FF3B30',
+                      color          : '#fff',
+                      fontSize       : '15px',
+                      fontWeight     : 600,
+                      fontFamily     : SF,
+                      cursor         : 'pointer',
+                      transition     : 'all 0.2s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = 'translateY(-2px)';
+                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(255,59,48,0.3)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.boxShadow = 'none';
+                    }}
+                  >
+                    Delete Budget
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (editLimit) {
+                        editBudget(editingBudget.id, {
+                          limit: Number(editLimit),
+                          alertThreshold: Number(editAlert),
+                        });
+                        setShowEdit(false);
+                        setEditingBudget(null);
+                      }
+                    }}
+                    style={{
+                      flex           : 1,
+                      padding        : '14px',
+                      borderRadius   : '12px',
+                      border         : 'none',
+                      background     : 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
+                      boxShadow      : 'var(--shadow-lg)',
+                      color          : 'var(--white)',
+                      fontSize       : '15px',
+                      fontWeight     : 600,
+                      fontFamily     : SF,
+                      cursor         : 'pointer',
+                      transition     : 'all 0.2s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = 'translateY(-2px)';
+                      e.currentTarget.style.boxShadow = 'var(--shadow-xl)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.boxShadow = 'var(--shadow-lg)';
+                    }}
+                  >
+                    Save Changes
+                  </button>
+                </div>
+              </>
             )}
           </div>
         </div>

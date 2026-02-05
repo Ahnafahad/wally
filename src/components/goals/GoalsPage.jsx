@@ -26,10 +26,7 @@ const RING_RADIUS = 56;                             // circle radius
 const RING_CIRC   = 2 * Math.PI * RING_RADIUS;     // full circumference
 
 export default function GoalsPage() {
-  const { isPro, goals, navigate, addGoalContribution } = useApp();
-
-  // ── View routing ──────────────────────────────────────────────────────────
-  const [selectedGoalId, setSelectedGoalId] = useState(null);
+  const { isPro, goals, navigate, addGoalContribution, accounts, selectedGoalId, setSelectedGoalId } = useApp();
 
   // Pick the goal object when in detail view
   const selectedGoal = goals.find(g => g.id === selectedGoalId) || null;
@@ -51,6 +48,7 @@ export default function GoalsPage() {
       isPro={isPro}
       navigate={navigate}
       onSelect={setSelectedGoalId}
+      accounts={accounts}
     />
   );
 }
@@ -58,7 +56,7 @@ export default function GoalsPage() {
 // ══════════════════════════════════════════════════════════════════════════════
 // LIST VIEW
 // ══════════════════════════════════════════════════════════════════════════════
-function GoalList({ goals, isPro, navigate, onSelect }) {
+function GoalList({ goals, isPro, navigate, onSelect, accounts }) {
   const { addGoal } = useApp();  // wire addGoal from context
 
   const activeGoals  = goals.filter(g => g.isActive && !g.isLocked);
@@ -188,6 +186,9 @@ function GoalList({ goals, isPro, navigate, onSelect }) {
               ? Math.min((goal.currentAmount / goal.targetAmount) * 100, 100)
               : 0;
 
+            // Find linked account
+            const linkedAccount = goal.accountId ? accounts.find(acc => acc.id === goal.accountId) : null;
+
             return (
               <button
                 key={goal.id}
@@ -197,7 +198,7 @@ function GoalList({ goals, isPro, navigate, onSelect }) {
                   alignItems     : 'center',
                   gap            : '12px',
                   padding        : '16px',
-                  borderRadius   : 'var(--radius-lg)',
+                  borderRadius   : '14px',
                   border         : '1px solid #F3F4F6',
                   backgroundColor: 'var(--white)',
                   cursor         : 'pointer',
@@ -277,6 +278,40 @@ function GoalList({ goals, isPro, navigate, onSelect }) {
                       }}
                     />
                   </div>
+
+                  {/* Linked Account Info */}
+                  {linkedAccount && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate('account', { account: linkedAccount });
+                      }}
+                      style={{
+                        marginTop: '8px',
+                        fontSize: '11px',
+                        color: 'var(--gray-500)',
+                        fontFamily: SF,
+                        background: 'none',
+                        border: 'none',
+                        padding: 0,
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.color = 'var(--cyan-primary)';
+                        e.currentTarget.style.textDecoration = 'underline';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.color = 'var(--gray-500)';
+                        e.currentTarget.style.textDecoration = 'none';
+                      }}
+                    >
+                      Account: {linkedAccount.name} • {formatCurrency(linkedAccount.balance)}
+                    </button>
+                  )}
                 </div>
 
                 {/* Chevron */}
@@ -705,6 +740,8 @@ function injectConfettiCSS() {
 // DETAIL VIEW
 // ══════════════════════════════════════════════════════════════════════════════
 function GoalDetail({ goal, onBack, addGoalContribution }) {
+  const { isPro, navigate, setPendingCoachPrompt } = useApp();
+
   // ── Add-contribution modal state ─────────────────────────────────────────
   const [showContrib,      setShowContrib]      = useState(false);
   const [contribAmt,       setContribAmt]       = useState('');
@@ -865,9 +902,27 @@ function GoalDetail({ goal, onBack, addGoalContribution }) {
               AI Insight
             </span>
           </div>
-          <p style={{ fontSize: '12px', color: '#4A4A4A', lineHeight: 1.5, fontFamily: SF, margin: 0 }}>
+          <p style={{ fontSize: '12px', color: '#4A4A4A', lineHeight: 1.5, fontFamily: SF, margin: isPro ? '0 0 10px' : 0 }}>
             {goal.aiInsight}
           </p>
+          {isPro && (
+            <button
+              onClick={() => { setPendingCoachPrompt('Help me optimize my goal contributions'); navigate('coach'); }}
+              style={{
+                background: 'rgba(45, 156, 219, 0.08)',
+                border: 'none',
+                borderRadius: '6px',
+                padding: '5px 10px',
+                color: '#2D9CDB',
+                fontSize: '12px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                fontFamily: SF,
+              }}
+            >
+              Ask AI →
+            </button>
+          )}
         </div>
       </div>
 

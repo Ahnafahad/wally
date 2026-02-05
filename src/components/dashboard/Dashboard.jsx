@@ -35,18 +35,64 @@ export default function Dashboard() {
     accounts,
     transactions,
     budgets,
+    goals,
     unreadCount,
     navigate,
     openModal,
     setSelectedTransaction,
+    setPendingCoachPrompt,
   } = useApp();
 
   const [imgError, setImgError] = useState(false);
+  const [remoteName, setRemoteName] = useState(null);
+
+  // poll /api/name for remote name updates (dev server only)
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const poll = () => fetch('/api/name').then(r => r.json()).then(d => setRemoteName(d.name)).catch(() => {});
+    poll();
+    const id = setInterval(poll, 1500);
+    return () => clearInterval(id);
+  }, []);
 
   // Refs for measuring component dimensions
   const containerRef = useRef(null);
   const headerRef = useRef(null);
   const balanceCardRef = useRef(null);
+
+  // Log remote name change link on mount
+  useEffect(() => {
+    const protocol = window.location.protocol;
+    const hostname = window.location.hostname;
+    const port = window.location.port;
+    const portString = port ? `:${port}` : '';
+
+    const currentName = new URLSearchParams(window.location.search).get('name') || (user === 'rafiq' ? 'Rafiq' : 'Sarah');
+
+    console.log('');
+    console.log('═══════════════════════════════════════════════════════');
+    console.log('🔗 REMOTE NAME CHANGE LINK');
+    console.log('═══════════════════════════════════════════════════════');
+    console.log('');
+    console.log('To change the displayed name remotely, use:');
+    console.log('');
+    console.log(`  ${protocol}//${hostname}${portString}/?name=YOUR_NAME`);
+    console.log('');
+    console.log('📋 Copy & paste these links:');
+    console.log('');
+    console.log(`  Local:   ${protocol}//${hostname}${portString}/?name=John`);
+    console.log(`  Local:   ${protocol}//${hostname}${portString}/?name=Sarah%20Ahmed`);
+    console.log('');
+    console.log('🌐 For network access (from other devices):');
+    console.log('  1. Stop the current server (Ctrl+C)');
+    console.log('  2. Restart with: npm run dev -- --host');
+    console.log('  3. Copy the Network URL from terminal');
+    console.log('  4. Append ?name=YOUR_NAME to the network URL');
+    console.log('');
+    console.log(`Current displayed name: ${currentName}`);
+    console.log('═══════════════════════════════════════════════════════');
+    console.log('');
+  }, [user]); // Re-log when user changes
 
   // Log dimensions on mount and window resize
   useEffect(() => {
@@ -108,7 +154,12 @@ export default function Dashboard() {
   const budgetLimit = getTotalBudgetLimit(budgets);
   const budgetSpent = getTotalBudgetSpent(budgets);
   const budgetPct = budgetLimit > 0 ? (budgetSpent / budgetLimit) * 100 : 0;
-  const userName = user === 'rafiq' ? 'Rafiq' : 'Sarah';
+
+  const urlName = new URLSearchParams(window.location.search).get('name');
+  const userName = remoteName || urlName || (user === 'rafiq' ? 'Rafiq' : 'Sarah');
+
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Good Morning' : hour < 18 ? 'Good Afternoon' : 'Good Evening';
 
   const bankTotal = accounts.filter(a => a.type === 'bank').reduce((sum, a) => sum + a.balance, 0);
   const mfsTotal = accounts.filter(a => a.type === 'mfs').reduce((sum, a) => sum + a.balance, 0);
@@ -204,7 +255,7 @@ export default function Dashboard() {
             color: '#1F2937',
             fontFamily: SF_DISPLAY,
           }}>
-            Good Morning, <span style={{ color: '#2D9CDB' }}>{userName}</span>
+            {greeting}, <span style={{ color: '#2D9CDB' }}>{userName}</span>
           </div>
         </div>
 
@@ -228,15 +279,18 @@ export default function Dashboard() {
           </div>
 
           {/* Profile picture */}
-          <div style={{
-            width: '40px',
-            height: '40px',
-            borderRadius: '12px',
-            overflow: 'hidden',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-            cursor: 'pointer',
-            border: '1px solid #E5E7EB',
-          }}>
+          <div
+            onClick={() => navigate('profile')}
+            style={{
+              width: '40px',
+              height: '40px',
+              borderRadius: '12px',
+              overflow: 'hidden',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+              cursor: 'pointer',
+              border: '1px solid #E5E7EB',
+            }}
+          >
             <img
               src="https://images.unsplash.com/photo-1628157588553-5eeea00af15c?auto=format&fit=crop&q=80&w=200&h=200"
               alt={userName}
@@ -627,7 +681,7 @@ export default function Dashboard() {
 
           {/* Action Button */}
           <button
-            onClick={() => navigate('coach')}
+            onClick={() => { setPendingCoachPrompt('Tell me more about my food spending'); navigate('coach'); }}
             style={{
               flexShrink: 0,
               backgroundColor: 'rgba(45, 156, 219, 0.1)',
@@ -773,6 +827,15 @@ export default function Dashboard() {
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════════
+          AD #1 - Middle Placement (Free tier only)
+          ═══════════════════════════════════════════════════════════════════ */}
+      {!isPro && (
+        <div style={{ padding: '20px 0 0' }}>
+          <AdBanner adIndex={0} />
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════════
           RECENT TRANSACTIONS (Keep existing functionality)
           ═══════════════════════════════════════════════════════════════════ */}
       <div style={{ padding: '28px clamp(16px, 2.5vw, 24px) 0' }}>
@@ -835,7 +898,7 @@ export default function Dashboard() {
                   flexShrink: 0,
                   fontSize: '22px',
                 }}>
-                  {emoji || (txn.merchant ? <MerchantLogo name={txn.merchant} size={26} /> : '💰')}
+                  <MerchantLogo merchant={txn.merchant} size={26} fallbackIcon={emoji} />
                 </div>
 
                 {/* Text */}
@@ -905,6 +968,189 @@ export default function Dashboard() {
           View All Transactions
         </button>
       </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          GOALS SECTION (Linked to Goals Page)
+          ═══════════════════════════════════════════════════════════════════ */}
+      <div style={{ padding: '20px clamp(16px, 2.5vw, 24px) 0' }}>
+        <div style={{
+          backgroundColor: '#fff',
+          borderRadius: '14px',
+          boxShadow: '0 2px 10px rgba(0,0,0,0.02)',
+          border: '1px solid #F3F4F6',
+          overflow: 'hidden',
+        }}>
+          {/* Header - clickable to navigate to goals page */}
+          <button
+            onClick={() => navigate('goals')}
+            style={{
+              width: '100%',
+              padding: '18px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              border: 'none',
+              borderBottom: '1px solid #F3F4F6',
+              background: 'none',
+              cursor: 'pointer',
+              transition: 'background-color 0.2s',
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#F9FAFB'}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+          >
+            <h3 style={{
+              fontSize: '15px',
+              fontWeight: 600,
+              color: '#1F2937',
+              fontFamily: SF_DISPLAY,
+              margin: 0,
+            }}>
+              💰 My Goals
+            </h3>
+            <Icons.ChevronRight size={20} color="#2D9CDB" strokeWidth={2} />
+          </button>
+
+          {/* Goals List */}
+          {(() => {
+            // Get account name helper
+            const getAccountName = (accountId) => {
+              const account = accounts.find(a => a.id === accountId);
+              return account ? account.name : 'Unlinked';
+            };
+
+            // Filter goals for display
+            const displayGoals = isPro
+              ? goals.filter(g => g.isActive).slice(0, 3)
+              : [...goals.filter(g => g.isActive).slice(0, 2), goals.find(g => g.isLocked)].filter(Boolean);
+
+            return displayGoals.map((goal, idx) => {
+              const isLocked = goal.isLocked;
+              const percentage = isLocked ? 0 : Math.min((goal.currentAmount / goal.targetAmount) * 100, 100);
+
+              return (
+                <button
+                  key={goal.id}
+                  onClick={() => {
+                    if (!isLocked) {
+                      navigate('goals', { selectedGoal: goal });
+                    }
+                  }}
+                  disabled={isLocked}
+                  style={{
+                    width: '100%',
+                    padding: '18px',
+                    border: 'none',
+                    borderBottom: idx < displayGoals.length - 1 ? '1px solid #F3F4F6' : 'none',
+                    background: 'none',
+                    cursor: isLocked ? 'default' : 'pointer',
+                    textAlign: 'left',
+                    transition: 'background-color 0.2s',
+                    opacity: isLocked ? 0.6 : 1,
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isLocked) e.currentTarget.style.backgroundColor = '#F9FAFB';
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isLocked) e.currentTarget.style.backgroundColor = 'transparent';
+                  }}
+                >
+                  {/* Goal name and emoji */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    marginBottom: '8px',
+                  }}>
+                    <div style={{
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      color: '#1F2937',
+                      fontFamily: SF,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                    }}>
+                      <span style={{ fontSize: '18px' }}>{goal.emoji}</span>
+                      {goal.name}
+                      {isLocked && <span style={{ fontSize: '14px' }}>🔒</span>}
+                    </div>
+                  </div>
+
+                  {isLocked ? (
+                    // Locked goal upgrade message
+                    <div style={{
+                      fontSize: '12px',
+                      color: '#6B7280',
+                      fontFamily: SF,
+                      fontStyle: 'italic',
+                    }}>
+                      Upgrade to Pro for unlimited goals
+                    </div>
+                  ) : (
+                    <>
+                      {/* Progress: current/target (percentage) */}
+                      <div style={{
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        color: '#1F2937',
+                        fontFamily: SF,
+                        marginBottom: '8px',
+                      }}>
+                        ৳ {formatBangla(goal.currentAmount)} / ৳ {formatBangla(goal.targetAmount)}
+                        <span style={{
+                          marginLeft: '8px',
+                          color: '#6B7280',
+                          fontWeight: 400,
+                        }}>
+                          ({Math.round(percentage)}%)
+                        </span>
+                      </div>
+
+                      {/* Progress bar */}
+                      <div style={{
+                        width: '100%',
+                        height: '8px',
+                        backgroundColor: '#F3F4F6',
+                        borderRadius: '9999px',
+                        overflow: 'hidden',
+                        marginBottom: '8px',
+                      }}>
+                        <div style={{
+                          height: '100%',
+                          width: `${percentage}%`,
+                          backgroundColor: '#2D9CDB',
+                          borderRadius: '9999px',
+                          transition: 'width 0.5s ease',
+                        }} />
+                      </div>
+
+                      {/* Linked account */}
+                      <div style={{
+                        fontSize: '12px',
+                        color: '#6B7280',
+                        fontFamily: SF,
+                      }}>
+                        Account: {getAccountName(goal.accountId)}
+                      </div>
+                    </>
+                  )}
+                </button>
+              );
+            });
+          })()}
+        </div>
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          AD #2 - Bottom Placement (Free tier only)
+          ═══════════════════════════════════════════════════════════════════ */}
+      {!isPro && (
+        <div style={{ padding: '28px 0 0' }}>
+          <AdBanner adIndex={1} />
+        </div>
+      )}
+
+
 
       {/* ═══════════════════════════════════════════════════════════════════
           NEW COMPONENT: SPENDING INSIGHTS (Added after transactions)
@@ -1090,12 +1336,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Ad Banner for Free users */}
-      {!isPro && (
-        <div style={{ padding: '28px clamp(16px, 2.5vw, 24px) 0' }}>
-          <AdBanner />
-        </div>
-      )}
+
     </div>
   );
 }

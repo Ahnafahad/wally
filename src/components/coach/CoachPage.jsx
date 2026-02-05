@@ -1,13 +1,22 @@
 /**
  * Wally – AI Financial Coach
  *
- * Chat interface with quick-question pills, typing indicator,
+ * Chat interface with quick-question pills, custom text input,
+ * Gemini API integration, typing indicator,
  * per-user question budgets (free vs Pro), and aiData-driven responses.
+ * Pro users also get a personalised investment-options analysis.
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { useApp }          from '../../AppContext';
-import { ChevronLeft }     from '../shared/Icons';
+import { useApp }                              from '../../AppContext';
+import { ChevronLeft, ArrowUp }                from '../shared/Icons';
+import { GoogleGenerativeAI }                  from '@google/generative-ai';
+import { formatBangla }                        from '../../utils/formatters';
+import { getTotalBalance }                     from '../../utils/calculations';
+
+// ─── Gemini setup ────────────────────────────────────────────────────────────
+const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
+const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
 // ─── Typing-indicator dot animation (CSS keyframes injected once) ──────────
 const TYPING_CSS = `
@@ -19,7 +28,7 @@ const TYPING_CSS = `
 function injectTypingCSS() {
   if (document.getElementById('wally-typing-css')) return;
   const tag = document.createElement('style');
-  tag.id        = 'wally-typing-css';
+  tag.id          = 'wally-typing-css';
   tag.textContent = TYPING_CSS;
   document.head.appendChild(tag);
 }
@@ -36,9 +45,23 @@ export default function CoachPage() {
     chatHistory,
     setChatHistory,
     navigate,
+    accounts,
+    goals,
+    transactions,
+    pendingCoachPrompt,
+    setPendingCoachPrompt,
   } = useApp();
 
-  const scrollRef = useRef(null);
+  const scrollRef  = useRef(null);
+  const inputRef   = useRef(null);
+  const [messageInput, setMessageInput] = useState('');
+  const [isSending, setIsSending]       = useState(false);
+  const [showRec, setShowRec]           = useState(true);
+
+  // credit-card dues for the recommendation card
+  const creditDues = accounts
+    .filter(a => a.type === 'credit_card')
+    .reduce((sum, a) => sum + Math.abs(a.balance), 0);
 
   // auto-scroll to bottom whenever chatHistory changes
   useEffect(() => {
@@ -47,8 +70,17 @@ export default function CoachPage() {
     }
   }, [chatHistory]);
 
-  // ── quick-question keys in the exact order requested ──────────────────────
+  // auto-send a pending prompt when coach opens from an insight card
+  useEffect(() => {
+    if (pendingCoachPrompt) {
+      setPendingCoachPrompt(null);
+      handleSendQuestion(pendingCoachPrompt);
+    }
+  }, [pendingCoachPrompt]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── quick-question keys ──────────────────────────────────────────────────
   const questionKeys = [
+    ...(isPro ? ['investment-options'] : []),
     'how-did-i-do',
     'where-overspending',
     'can-i-afford-goal',
@@ -58,35 +90,106 @@ export default function CoachPage() {
     'compare-months',
   ];
 
-  // ── handle a quick-question tap ───────────────────────────────────────────
-  function handleQuestion(key) {
-    const entry = aiData[key];
-    if (!entry) return;
+  // ── financial context builder (injected into every Gemini prompt) ────────
+  function buildFinancialContext() {
+    const totalBalance    = getTotalBalance(accounts);
+    const monthlyIncome   = transactions
+      .filter(t => t.type === 'income' && t.date.startsWith('2026-02'))
+      .reduce((sum, t) => sum + t.amount, 0);
+    const monthlyExpenses = transactions
+      .filter(t => t.type === 'expense' && t.date.startsWith('2026-02'))
+      .reduce((sum, t) => sum + t.amount, 0);
 
-    // gate: free users with 0 questions left may not ask
-    if (!isPro && aiQuestionsLeft <= 0) return;
+    // top spending category this month
+    const catTotals = {};
+    transactions
+      .filter(t => t.type === 'expense' && t.date.startsWith('2026-02'))
+      .forEach(t => { catTotals[t.category] = (catTotals[t.category] || 0) + t.amount; });
+    const topCategory = Object.entries(catTotals).sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A';
 
-    const userMsg  = { role: 'user',  text: entry.question };
-    const dotMsg   = { role: 'ai',    text: '...' };
+    const savingsRate = monthlyIncome > 0
+      ? ((monthlyIncome - monthlyExpenses) / monthlyIncome * 100).toFixed(1)
+      : '0';
 
-    setChatHistory(prev => [...prev, userMsg, dotMsg]);
-    useAiQuestion();
-
-    // after 1 200 ms replace the typing dot with the real response
-    setTimeout(() => {
-      setChatHistory(prev => {
-        const copy = [...prev];
-        copy[copy.length - 1] = { role: 'ai', text: entry.response };
-        return copy;
-      });
-    }, 1200);
+    return `You are a helpful financial advisor for a Bangladeshi fintech app called Wally.
+The user's financial snapshot:
+- Total balance: ৳${formatBangla(totalBalance)}
+- Monthly income (Feb 2026): ৳${formatBangla(monthlyIncome)}
+- Monthly expenses (Feb 2026): ৳${formatBangla(monthlyExpenses)}
+- Savings rate: ${savingsRate}%
+- Top spending category: ${topCategory}
+- Active goals: ${goals.filter(g => g.isActive).length}
+Keep responses brief (2-3 sentences), actionable, and use Bangladeshi Taka (৳) format.`;
   }
 
-  // ── render helpers ─────────────────────────────────────────────────────────
-  const isFirstAiMessage = (idx) => {
-    // true when this is the very first message in the history
-    return idx === 0 && chatHistory[idx]?.role === 'ai';
-  };
+  // ── send a question: preset → Gemini ────────────────────────────────────
+  async function handleSendQuestion(questionText) {
+    if (!isPro && aiQuestionsLeft <= 0) return;
+
+    setChatHistory(prev => [...prev,
+      { role: 'user', text: questionText },
+      { role: 'ai',   text: '...' },          // typing indicator
+    ]);
+    useAiQuestion();
+
+    // ── preset-question match ──
+    const presetKey = Object.keys(aiData).find(k =>
+      aiData[k].question.toLowerCase() === questionText.toLowerCase()
+    );
+    if (presetKey) {
+      setTimeout(() => {
+        setChatHistory(prev => {
+          const c = [...prev];
+          c[c.length - 1] = { role: 'ai', text: aiData[presetKey].response };
+          return c;
+        });
+      }, 1200);
+      return;
+    }
+
+    // ── custom question → Gemini API ──
+    try {
+      const prompt  = `${buildFinancialContext()}\n\nUser question: ${questionText}\n\nProvide a concise, helpful response in 2-3 sentences.`;
+      const result  = await model.generateContent(prompt);
+      const aiText  = (await result.response).text();
+      setChatHistory(prev => {
+        const c = [...prev];
+        c[c.length - 1] = { role: 'ai', text: aiText };
+        return c;
+      });
+    } catch (err) {
+      console.error('Gemini API error:', err);
+      setChatHistory(prev => {
+        const c = [...prev];
+        c[c.length - 1] = { role: 'ai', text: "I'm having trouble connecting right now. Try one of the preset questions above, or ask me later!" };
+        return c;
+      });
+    }
+  }
+
+  // ── quick-question pill tap ──────────────────────────────────────────────
+  function handleQuestion(key) {
+    if (key === 'investment-options') {
+      handleSendQuestion('Show me investment options');
+      return;
+    }
+    const entry = aiData[key];
+    if (!entry || (!isPro && aiQuestionsLeft <= 0)) return;
+    handleSendQuestion(entry.question);
+  }
+
+  // ── text-input submit ────────────────────────────────────────────────────
+  async function handleSubmit() {
+    if (!messageInput.trim() || isSending) return;
+    setIsSending(true);
+    const text = messageInput.trim();
+    setMessageInput('');
+    await handleSendQuestion(text);
+    setIsSending(false);
+  }
+
+  // ── render helpers ───────────────────────────────────────────────────────
+  const isFirstAiMessage = (idx) => idx === 0 && chatHistory[idx]?.role === 'ai';
 
   function TypingDots() {
     return (
@@ -108,9 +211,58 @@ export default function CoachPage() {
     );
   }
 
+  // Renders AI text with **bold** and clickable URLs ("Visit →")
+  function renderMessageText(text) {
+    const lines = text.split('\n');
+    return lines.map((line, i) => {
+      // ── URLs ──
+      const urlPattern = /(https?:\/\/[^\s]+)/;
+      if (urlPattern.test(line)) {
+        const parts = line.split(urlPattern);
+        return (
+          <div key={i} style={{ marginBottom: '4px' }}>
+            {parts.map((part, j) =>
+              /^https?:\/\//.test(part) ? (
+                <a
+                  key={j}
+                  href={part}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ color: '#2D9CDB', textDecoration: 'underline', wordBreak: 'break-all', fontSize: '13px' }}
+                >
+                  Visit →
+                </a>
+              ) : (
+                <span key={j}>{part}</span>
+              )
+            )}
+          </div>
+        );
+      }
+      // ── **bold** text ──
+      if (line.includes('**')) {
+        const parts = line.split(/\*\*([^*]+)\*\*/);
+        return (
+          <div key={i} style={{ marginBottom: '4px' }}>
+            {parts.map((part, j) =>
+              j % 2 === 1
+                ? <strong key={j} style={{ color: '#1F2937' }}>{part}</strong>
+                : <span key={j}>{part}</span>
+            )}
+          </div>
+        );
+      }
+      // ── plain line (empty → extra gap) ──
+      return <div key={i} style={{ marginBottom: line ? '4px' : '8px' }}>{line}</div>;
+    });
+  }
+
   // ─── JSX ─────────────────────────────────────────────────────────────────
+  const inputBlocked = !isPro && aiQuestionsLeft <= 0;
+  const sendDisabled = !messageInput.trim() || isSending || inputBlocked;
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--white)', paddingBottom: '100px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--white)' }}>
 
       {/* ── Header ────────────────────────────────────────────────────────── */}
       <div style={{
@@ -205,6 +357,67 @@ export default function CoachPage() {
         </div>
       )}
 
+      {/* ── AI recommendation nudge (Pro only) ───────────────────────────── */}
+      {isPro && showRec && creditDues > 0 && (
+        <div style={{
+          margin     : '0 16px 4px',
+          padding    : '13px 14px',
+          background : 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)',
+          border     : '1px solid #a7f3d0',
+          borderRadius: '14px',
+          flexShrink : 0,
+          position   : 'relative',
+        }}>
+          {/* dismiss */}
+          <button
+            onClick={() => setShowRec(false)}
+            style={{
+              position: 'absolute', top: '6px', right: '6px',
+              background: 'none', border: 'none', cursor: 'pointer',
+              fontSize: '18px', color: '#6B7280', padding: '2px 4px', lineHeight: 1,
+            }}
+          >×</button>
+
+          {/* header */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '5px' }}>
+            <span style={{ fontSize: '15px' }}>💡</span>
+            <span style={{
+              fontSize: '11px', fontWeight: 700, color: '#065f46',
+              fontFamily: 'SF Pro Text, -apple-system, sans-serif',
+              textTransform: 'uppercase', letterSpacing: '0.05em',
+            }}>
+              Wally suggests
+            </span>
+          </div>
+
+          {/* body */}
+          <p style={{
+            fontSize: '13px', color: '#047857', lineHeight: 1.45, margin: '0 0 10px',
+            fontFamily: 'SF Pro Text, -apple-system, sans-serif', paddingRight: '18px',
+          }}>
+            You cut spending 15% from last month — but card dues are still sitting at <strong>৳ {formatBangla(creditDues)}</strong>. Interest is quietly eating your surplus. Pay it off first, then point that same cash at MBA Fund — that single reorder puts you 2 months ahead on your biggest goal.
+          </p>
+
+          {/* opt-in CTA */}
+          <button
+            onClick={() => { setShowRec(false); handleSendQuestion('Show me investment options'); }}
+            style={{
+              background  : 'linear-gradient(135deg, #10B981, #34D399)',
+              border      : 'none',
+              borderRadius: '8px',
+              padding     : '7px 14px',
+              color       : '#fff',
+              fontSize    : '13px',
+              fontWeight  : 600,
+              cursor      : 'pointer',
+              fontFamily  : 'SF Pro Text, -apple-system, sans-serif',
+            }}
+          >
+            Tell me more →
+          </button>
+        </div>
+      )}
+
       {/* ── Chat area ─────────────────────────────────────────────────────── */}
       <div
         ref={scrollRef}
@@ -212,9 +425,9 @@ export default function CoachPage() {
         style={{ flex: 1, overflowY: 'auto', padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: '12px', background: '#F9FAFB' }}
       >
         {chatHistory.map((msg, idx) => {
-          const isAi       = msg.role === 'ai';
-          const isTyping   = isAi && msg.text === '...';
-          const isWelcome  = isFirstAiMessage(idx);
+          const isAi      = msg.role === 'ai';
+          const isTyping  = isAi && msg.text === '...';
+          const isWelcome = isFirstAiMessage(idx);
 
           if (isAi) {
             return (
@@ -251,21 +464,21 @@ export default function CoachPage() {
                   border: '1px solid var(--gray-200)',
                 }}>
                   {isTyping ? <TypingDots /> : (
-                    <span style={{
+                    <div style={{
                       fontSize: '14px',
                       color: 'var(--gray-900)',
                       lineHeight: 1.5,
                       fontFamily: 'SF Pro Text, -apple-system, sans-serif',
                     }}>
-                      {msg.text}
-                    </span>
+                      {renderMessageText(msg.text)}
+                    </div>
                   )}
                 </div>
               </div>
             );
           }
 
-          // ── user bubble ──────────────────────────────────────────────────
+          // ── user bubble ────────────────────────────────────────────────
           return (
             <div key={idx} style={{ display: 'flex', justifyContent: 'flex-end' }}>
               <div style={{
@@ -289,21 +502,80 @@ export default function CoachPage() {
         })}
       </div>
 
+      {/* ── Text input bar ────────────────────────────────────────────────── */}
+      <div style={{ flexShrink: 0, padding: '12px 24px', background: 'var(--white)', borderTop: '1px solid var(--gray-200)' }}>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <input
+            ref={inputRef}
+            type="text"
+            value={messageInput}
+            onChange={(e) => setMessageInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSubmit();
+              }
+            }}
+            placeholder="Ask me anything about your finances…"
+            disabled={inputBlocked || isSending}
+            style={{
+              flex: 1,
+              padding: '12px 16px',
+              borderRadius: '12px',
+              border: '1px solid var(--gray-200)',
+              background: inputBlocked ? 'var(--gray-100)' : '#F9FAFB',
+              fontSize: '14px',
+              color: 'var(--gray-900)',
+              fontFamily: 'SF Pro Text, -apple-system, sans-serif',
+              outline: 'none',
+              transition: 'border-color 0.2s',
+            }}
+            onFocus={(e)  => { if (!inputBlocked) e.target.style.borderColor = 'var(--cyan-primary)'; }}
+            onBlur={(e)   => { e.target.style.borderColor = 'var(--gray-200)'; }}
+          />
+          <button
+            onClick={handleSubmit}
+            disabled={sendDisabled}
+            style={{
+              width: '44px',
+              height: '44px',
+              borderRadius: '50%',
+              background: sendDisabled
+                ? 'var(--gray-200)'
+                : 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
+              border: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: sendDisabled ? 'default' : 'pointer',
+              boxShadow: sendDisabled ? 'none' : '0 4px 14px rgba(74,173,224,0.35)',
+              transition: 'all 0.2s',
+              flexShrink: 0,
+            }}
+          >
+            <ArrowUp size={20} color="#fff" strokeWidth={2.5} />
+          </button>
+        </div>
+      </div>
+
       {/* ── Quick-question pills ──────────────────────────────────────────── */}
-      <div style={{ flexShrink: 0, paddingBottom: '12px', background: 'var(--white)', borderTop: '1px solid var(--gray-200)' }}>
+      <div style={{ flexShrink: 0, paddingBottom: '12px', background: 'var(--white)' }}>
         <div
           className="scroll-hide"
           style={{
             display: 'flex',
             gap: '8px',
             overflowX: 'auto',
-            padding: '12px 24px',
+            padding: '8px 24px',
           }}
         >
           {questionKeys.map(key => {
-            const entry = aiData[key];
+            const isInvest = key === 'investment-options';
+            const entry    = isInvest ? { question: 'Show me investment options' } : aiData[key];
             if (!entry) return null;
-            const blocked = !isPro && aiQuestionsLeft <= 0;
+            const blocked  = !isPro && aiQuestionsLeft <= 0;
+            const accentColor = isInvest ? '#10B981' : '#2D9CDB';
+
             return (
               <button
                 key={key}
@@ -312,13 +584,13 @@ export default function CoachPage() {
                 style={{
                   whiteSpace     : 'nowrap',
                   background     : blocked ? 'var(--gray-100)' : 'var(--white)',
-                  border         : `2px solid ${blocked ? 'var(--gray-300)' : '#2D9CDB'}`,
+                  border         : `2px solid ${blocked ? 'var(--gray-300)' : accentColor}`,
                   borderRadius   : 'var(--radius-full)',
                   padding        : '8px 16px',
                   minHeight      : '36px',
                   fontSize       : '13px',
                   fontWeight     : 600,
-                  color          : blocked ? 'var(--gray-500)' : '#2D9CDB',
+                  color          : blocked ? 'var(--gray-500)' : accentColor,
                   cursor         : blocked ? 'default' : 'pointer',
                   fontFamily     : 'SF Pro Text, -apple-system, sans-serif',
                   transition     : 'all 0.2s ease',
@@ -326,18 +598,18 @@ export default function CoachPage() {
                 }}
                 onMouseEnter={(e) => {
                   if (!blocked) {
-                    e.currentTarget.style.background = '#2D9CDB';
-                    e.currentTarget.style.color = 'var(--white)';
-                    e.currentTarget.style.transform = 'translateY(-2px)';
-                    e.currentTarget.style.boxShadow = 'var(--shadow-md)';
+                    e.currentTarget.style.background  = accentColor;
+                    e.currentTarget.style.color       = 'var(--white)';
+                    e.currentTarget.style.transform   = 'translateY(-2px)';
+                    e.currentTarget.style.boxShadow   = 'var(--shadow-md)';
                   }
                 }}
                 onMouseLeave={(e) => {
                   if (!blocked) {
-                    e.currentTarget.style.background = 'var(--white)';
-                    e.currentTarget.style.color = '#2D9CDB';
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
+                    e.currentTarget.style.background  = 'var(--white)';
+                    e.currentTarget.style.color       = accentColor;
+                    e.currentTarget.style.transform   = 'translateY(0)';
+                    e.currentTarget.style.boxShadow   = 'var(--shadow-sm)';
                   }
                 }}
               >

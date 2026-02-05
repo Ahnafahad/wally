@@ -6,7 +6,7 @@
  * the persistent bottom nav, any open modals, and a developer account-switcher.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AppProvider, useApp } from './AppContext';
 
 // ── Page-level routes ────────────────────────────────────────────────────────
@@ -18,6 +18,8 @@ import ReportsPage            from './components/reports/ReportsPage';
 import AccountDetail          from './components/account/AccountDetail';
 import LinkAccountPage        from './components/account/LinkAccountPage';
 import FinancialScoreDetail   from './components/financialScore/FinancialScoreDetail';
+import AllTransactions        from './components/transactions/AllTransactions';
+import ProfilePage            from './components/profile/ProfilePage';
 
 // ── Shared layout & overlays ─────────────────────────────────────────────────
 import BottomNav               from './components/layout/BottomNav';
@@ -25,6 +27,30 @@ import TransactionModal        from './components/transaction/TransactionModal';
 import TransactionDetailModal  from './components/transaction/TransactionDetailModal';
 import NotificationsPanel      from './components/notifications/NotificationsPanel';
 import YearInReview            from './components/yearinreview/YearInReview';
+
+// ─── SMS notification simulation (Pro only, triggered by Ctrl+Shift+X) ──
+const SMS_CSS = `
+@keyframes smsSlideIn {
+  0%   { transform: translateX(-50%) translateY(-110%); opacity: 0; }
+  14%  { transform: translateX(-50%) translateY(0);     opacity: 1; }
+  80%  { transform: translateX(-50%) translateY(0);     opacity: 1; }
+  100% { transform: translateX(-50%) translateY(-110%); opacity: 0; }
+}`;
+function injectSmsCss() {
+  if (document.getElementById('wally-sms-css')) return;
+  const s          = document.createElement('style');
+  s.id             = 'wally-sms-css';
+  s.textContent    = SMS_CSS;
+  document.head.appendChild(s);
+}
+
+const SMS_POOL = [
+  { sender: 'CITY BANK', merchant: 'NANDOS GULSHAN DHAKA',    displayMerchant: "Nando's Gulshan",  amount: 1850, category: 'Food & Dining',   accountId: 'sarah-city-cc',  cardFull: '542612**2244', helpline: '16217' },
+  { sender: 'CITY BANK', merchant: 'DARAZ BANGLADESH DHAKA',  displayMerchant: 'Daraz Bangladesh', amount: 4200, category: 'Shopping',        accountId: 'sarah-city-cc',  cardFull: '542612**2244', helpline: '16217' },
+  { sender: 'BRAC BANK', merchant: 'UBER DHAKA RIDE',         displayMerchant: 'Uber Dhaka',       amount: 380,  category: 'Transportation', accountId: 'sarah-brac-cc', cardFull: '677834**5566', helpline: '16010' },
+  { sender: 'BRAC BANK', merchant: 'STAR CINEPLEX DHAKA',     displayMerchant: 'Star Cineplex',    amount: 800,  category: 'Entertainment',  accountId: 'sarah-brac-cc', cardFull: '677834**5566', helpline: '16010' },
+  { sender: 'CITY BANK', merchant: 'AGORA SUPERMARKET DHAKA', displayMerchant: 'Agora Supermarket',amount: 2950, category: 'Food & Dining',   accountId: 'sarah-city-cc',  cardFull: '542612**2244', helpline: '16217' },
+];
 
 // ─── Entry point ─────────────────────────────────────────────────────────────
 export default function App() {
@@ -37,7 +63,80 @@ export default function App() {
 
 // ─── Shell layout ────────────────────────────────────────────────────────────
 function AppShell() {
-  const { screen, showModal, showYearInReview } = useApp();
+  const { screen, showModal, showYearInReview, user, accounts, budgets, addTransaction, updateAccountBalance, editBudget } = useApp();
+
+  // ── SMS notification simulation ─────────────────────────────────────────
+  const [smsNotif, setSmsNotif]   = useState(null);
+  const smsActiveRef              = useRef(false);
+  const smsIdxRef                 = useRef(0);
+  const smsTimerRef               = useRef(null);
+
+  injectSmsCss();
+
+  // reset when user switches
+  useEffect(() => {
+    if (smsTimerRef.current) { clearTimeout(smsTimerRef.current); smsTimerRef.current = null; }
+    setSmsNotif(null);
+    smsActiveRef.current = false;
+  }, [user]);
+
+  // Ctrl+Shift+X → fire next SMS from pool
+  useEffect(() => {
+    function onKey(e) {
+      if (!(e.ctrlKey && e.shiftKey && e.key === 'X')) return;
+      e.preventDefault();
+      if (user !== 'sarah' || smsActiveRef.current) return;
+      smsActiveRef.current = true;
+
+      const spec    = SMS_POOL[smsIdxRef.current % SMS_POOL.length];
+      smsIdxRef.current++;
+
+      const card    = accounts.find(a => a.id === spec.accountId);
+      const owed    = card ? Math.abs(card.balance) : 0;
+      const newOwed = owed + spec.amount;
+      const avail   = (card?.creditLimit || 0) - newOwed;
+
+      const now     = new Date();
+      const pad     = n => String(n).padStart(2, '0');
+      const h12     = now.getHours() % 12 || 12;
+      const ampm    = now.getHours() >= 12 ? 'PM' : 'AM';
+      const timeStr = `${pad(h12)}:${pad(now.getMinutes())}:${pad(now.getSeconds())} ${ampm}`;
+
+      const text = `${spec.sender}: Purchase txn BDT ${spec.amount} from ${spec.merchant}. Card ${spec.cardFull} on 04-Feb-26 ${timeStr} BST. Avail Bal: BDT ${avail}.00. ${spec.sender} Helpline ${spec.helpline}`;
+
+      setSmsNotif({ text, sender: spec.sender, spec, newOwed });
+
+      smsTimerRef.current = setTimeout(() => {
+        addTransaction({ date: '2026-02-04', merchant: spec.displayMerchant, amount: spec.amount, type: 'expense', category: spec.category, account: spec.accountId });
+        updateAccountBalance(spec.accountId, -newOwed);
+        const matchBudget = budgets.find(b => b.category === spec.category);
+        if (matchBudget) editBudget(matchBudget.id, { spent: matchBudget.spent + spec.amount });
+        setSmsNotif(null);
+        smsActiveRef.current = false;
+        smsTimerRef.current  = null;
+      }, 3000);
+    }
+
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      if (smsTimerRef.current) clearTimeout(smsTimerRef.current);
+    };
+  }, [user, accounts, budgets, addTransaction, updateAccountBalance, editBudget]);
+
+  // tap-to-dismiss fires the transaction immediately
+  function dismissSms() {
+    if (smsTimerRef.current) { clearTimeout(smsTimerRef.current); smsTimerRef.current = null; }
+    if (smsNotif) {
+      const { spec, newOwed } = smsNotif;
+      addTransaction({ date: '2026-02-04', merchant: spec.displayMerchant, amount: spec.amount, type: 'expense', category: spec.category, account: spec.accountId });
+      updateAccountBalance(spec.accountId, -newOwed);
+      const matchBudget = budgets.find(b => b.category === spec.category);
+      if (matchBudget) editBudget(matchBudget.id, { spent: matchBudget.spent + spec.amount });
+    }
+    setSmsNotif(null);
+    smsActiveRef.current = false;
+  }
 
   // Route table – map screen keys to page components
   const screenMap = {
@@ -49,7 +148,8 @@ function AppShell() {
     account         : AccountDetail,
     linkAccount     : LinkAccountPage,
     financialScore  : FinancialScoreDetail,
-    allTransactions : Dashboard, // TODO: Create dedicated AllTransactions page
+    allTransactions : AllTransactions,
+    profile         : ProfilePage,
   };
 
   const Screen = screenMap[screen] || Dashboard;
@@ -75,6 +175,7 @@ function AppShell() {
         className="scroll-hide"
         style={{
           flex           : 1,
+          height         : 0,
           overflowY      : 'auto',
           background     : '#F5F7FA',
           maxWidth       : '864px',
@@ -93,6 +194,63 @@ function AppShell() {
       {showModal === 'transactionDetail' && <TransactionDetailModal />}
       {showModal === 'notifications'     && <NotificationsPanel />}
       {showYearInReview                  && <YearInReview />}
+
+      {/* ── SMS notification banner (Pro demo) ─────────────────────────────── */}
+      {smsNotif && (
+        <div
+          onClick={dismissSms}
+          style={{
+            position  : 'fixed',
+            top       : 0,
+            left      : '50%',
+            width     : '375px',
+            maxWidth  : '92vw',
+            zIndex    : 9999,
+            animation : 'smsSlideIn 3s ease forwards',
+            cursor    : 'pointer',
+          }}
+        >
+          <div style={{
+            margin         : '10px 12px',
+            background     : 'rgba(22, 22, 27, 0.93)',
+            borderRadius   : '16px',
+            padding        : '13px 15px',
+            boxShadow      : '0 6px 28px rgba(0,0,0,0.45)',
+            backdropFilter : 'blur(24px)',
+          }}>
+            {/* Header row */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {/* Messages app icon (green speech bubble) */}
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                  <rect width="24" height="24" rx="6" fill="#34C759" />
+                  <path d="M7 9h10M7 13h6" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" />
+                </svg>
+                <span style={{ fontSize: '13px', fontWeight: 700, color: '#fff', fontFamily: 'SF Pro Text, -apple-system, sans-serif' }}>
+                  {smsNotif.sender}
+                </span>
+              </div>
+              <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.45)', fontFamily: 'SF Pro Text, -apple-system, sans-serif' }}>
+                now
+              </span>
+            </div>
+            {/* Message body – clamped to 2 lines */}
+            <p style={{
+              margin         : 0,
+              fontSize       : '13px',
+              color          : 'rgba(255,255,255,0.82)',
+              lineHeight     : 1.45,
+              fontFamily     : 'SF Pro Text, -apple-system, sans-serif',
+              display        : '-webkit-box',
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical',
+              overflow       : 'hidden',
+            }}>
+              {smsNotif.text}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* ── Developer account switcher (subtle, bottom-right) ─────────────── */}
       <DevSwitcher />

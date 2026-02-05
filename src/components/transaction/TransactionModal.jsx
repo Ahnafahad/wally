@@ -7,9 +7,9 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { useApp }                      from '../../AppContext';
-import { X, ChevronDown }              from '../shared/Icons';
-import { suggestCategory }             from '../../utils/calculations';
+import { useApp } from '../../AppContext';
+import { X, ChevronDown } from '../shared/Icons';
+import { suggestCategory } from '../../utils/calculations';
 import { formatDate, getCategoryColor, getCategoryEmoji } from '../../utils/formatters';
 
 // ─── All selectable categories ───────────────────────────────────────────────
@@ -45,18 +45,25 @@ function injectSpinnerCSS() {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 export default function TransactionModal() {
-  const { closeModal, addTransaction, accounts } = useApp();
+  const { closeModal, addTransaction, accounts, pendingTransaction, setPendingTransaction } = useApp();
 
   // ── form state ─────────────────────────────────────────────────────────────
-  const [type,        setType]        = useState('expense');   // expense | income | transfer
-  const [amount,      setAmount]      = useState('');
-  const [merchant,    setMerchant]    = useState('');
-  const [category,    setCategory]    = useState('Food & Dining');
-  const [account,     setAccount]     = useState(accounts[0]?.id || '');
-  const [notes,       setNotes]       = useState('');
+  const [type, setType] = useState(pendingTransaction?.type || 'expense');
+  const [amount, setAmount] = useState(pendingTransaction?.amount?.toString() || '');
+  const [merchant, setMerchant] = useState(pendingTransaction?.merchant || '');
+  const [category, setCategory] = useState(pendingTransaction?.category || 'Food & Dining');
+  const [account, setAccount] = useState(pendingTransaction?.account || accounts[0]?.id || '');
+  const [notes, setNotes] = useState('');
   const [showCatPick, setShowCatPick] = useState(false);
   const [showAccPick, setShowAccPick] = useState(false);
-  const [savePhase,   setSavePhase]   = useState(null);   // null | 'categorizing' | 'categorized' | 'done'
+  const [savePhase, setSavePhase] = useState(null);   // null | 'categorizing' | 'categorized' | 'done'
+
+  // Clear pendingTransaction after it's been used
+  useEffect(() => {
+    if (pendingTransaction) {
+      setPendingTransaction(null);
+    }
+  }, []);
 
   // ── auto-suggest category when merchant changes ───────────────────────────
   const suggested = suggestCategory(merchant);
@@ -69,10 +76,10 @@ export default function TransactionModal() {
     if (!amount || parseFloat(amount) === 0) return;   // guard: need a number
 
     const txn = {
-      id        : 'new-' + Date.now(),
-      date      : '2026-02-04',
-      merchant  : merchant || 'Unknown',
-      amount    : parseFloat(amount),
+      id: 'new-' + Date.now(),
+      date: '2026-02-04',
+      merchant: merchant || 'Unknown',
+      amount: parseFloat(amount),
       type,
       category,
       account,
@@ -105,7 +112,7 @@ export default function TransactionModal() {
       <div style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 200,
+        zIndex: 3000,
         background: '#fff',
         display: 'flex',
         flexDirection: 'column',
@@ -114,7 +121,7 @@ export default function TransactionModal() {
         margin: '0 auto',
         left: '50%',
         transform: 'translateX(-50%)',
-        paddingBottom: '100px',
+        paddingBottom: '32px',
       }}>
 
         {/* ── Header ──────────────────────────────────────────────────── */}
@@ -134,7 +141,7 @@ export default function TransactionModal() {
         <div style={{ display: 'flex', gap: '6px', padding: '0 16px 16px', flexShrink: 0 }}>
           {['expense', 'income', 'transfer'].map(t => {
             const active = type === t;
-            const label  = t.charAt(0).toUpperCase() + t.slice(1);
+            const label = t.charAt(0).toUpperCase() + t.slice(1);
             const colors = { expense: '#FF3B30', income: '#34C759', transfer: '#2D9CDB' };
             return (
               <button
@@ -143,8 +150,8 @@ export default function TransactionModal() {
                 style={{
                   flex: 1, padding: '8px 0', border: 'none', borderRadius: '10px', cursor: 'pointer',
                   background: active ? colors[t] : '#F2F2F7',
-                  color     : active ? '#fff'   : '#8E8E93',
-                  fontSize  : '13px', fontWeight: 600,
+                  color: active ? '#fff' : '#8E8E93',
+                  fontSize: '13px', fontWeight: 600,
                   fontFamily: 'SF Pro Text, -apple-system, sans-serif',
                   transition: 'background 0.2s, color 0.2s',
                 }}

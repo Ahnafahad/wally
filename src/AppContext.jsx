@@ -8,18 +8,24 @@
 import React, { createContext, useContext, useState } from 'react';
 
 // ─── Seed data ───────────────────────────────────────────────────────────────
-import rafiqAccounts     from './data/accounts/rafiq';
-import sarahAccounts     from './data/accounts/sarah';
-import rafiqBudgets      from './data/budgets/rafiq';
-import sarahBudgets      from './data/budgets/sarah';
-import rafiqGoals        from './data/goals/rafiq';
-import sarahGoals        from './data/goals/sarah';
+import rafiqAccounts from './data/accounts/rafiq';
+import sarahAccounts from './data/accounts/sarah';
+import rafiqBudgets from './data/budgets/rafiq';
+import sarahBudgets from './data/budgets/sarah';
+import rafiqGoals from './data/goals/rafiq';
+import sarahGoals from './data/goals/sarah';
 import rafiqTransactions from './data/transactions/rafiq';
 import sarahTransactions from './data/transactions/sarah';
-import notifications     from './data/notifications';
-import reportData        from './data/reports';
-import ads               from './data/ads';
+import notifications from './data/notifications';
+import reportData from './data/reports';
+import ads from './data/ads';
 import { rafiqResponses, sarahResponses } from './data/aiResponses';
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+import { getLogoUrl } from './utils/brandMapping';
+
+// Helper to enrich transactions with logo property
+const enrich = (txns) => txns.map(t => ({ ...t, logo: getLogoUrl(t.merchant) }));
 
 // ─── Context object ──────────────────────────────────────────────────────────
 const AppContext = createContext();
@@ -27,42 +33,56 @@ const AppContext = createContext();
 // ─── Provider ────────────────────────────────────────────────────────────────
 export function AppProvider({ children }) {
   // ── Core state ─────────────────────────────────────────────────────────────
-  const [user,               setUser]               = useState('rafiq');
-  const [screen,             setScreen]             = useState('dashboard');
-  const [selectedAccount,    setSelectedAccount]    = useState(null);
-  const [showModal,          setShowModal]          = useState(null);       // 'transaction' | 'notifications'
-  const [showYearInReview,   setShowYearInReview]   = useState(false);
-  const [notifs,             setNotifs]             = useState(notifications);
-  const [txnData,            setTxnData]            = useState({ rafiq: rafiqTransactions, sarah: sarahTransactions });
-  const [goalData,           setGoalData]           = useState({ rafiq: rafiqGoals, sarah: sarahGoals });
-  const [aiQuestionsLeft,    setAiQuestionsLeft]    = useState(2);
-  const [chatHistory,        setChatHistory]        = useState([
+  const [user, setUser] = useState('rafiq');
+  const [screen, setScreen] = useState('dashboard');
+  const [selectedAccount, setSelectedAccount] = useState(null);
+  const [showModal, setShowModal] = useState(null);       // 'transaction' | 'notifications'
+  const [showYearInReview, setShowYearInReview] = useState(false);
+  const [notifs, setNotifs] = useState(notifications);
+  const [txnData, setTxnData] = useState({
+    rafiq: enrich(rafiqTransactions),
+    sarah: enrich(sarahTransactions)
+  });
+  const [goalData, setGoalData] = useState({ rafiq: rafiqGoals, sarah: sarahGoals });
+  const [aiQuestionsLeft, setAiQuestionsLeft] = useState(20);
+  const [chatHistory, setChatHistory] = useState([
     { role: 'ai', text: 'Hi! I am your AI Financial Coach. I analyze your spending, budgets, and goals to help you make smarter money decisions. What would you like to know?' }
   ]);
-  const [currentAdIndex,     setCurrentAdIndex]     = useState(0);
-  const [budgetData,         setBudgetData]         = useState({ rafiq: rafiqBudgets, sarah: sarahBudgets });
+  const [currentAdIndex, setCurrentAdIndex] = useState(0);
+  const [budgetData, setBudgetData] = useState({ rafiq: rafiqBudgets, sarah: sarahBudgets });
   const [selectedTransaction, setSelectedTransaction] = useState(null);
+  const [accountData, setAccountData] = useState({ rafiq: rafiqAccounts, sarah: sarahAccounts });
+  const [pendingTransaction, setPendingTransaction] = useState(null);
+  const [pendingCoachPrompt, setPendingCoachPrompt] = useState(null);
+  const [txnFilter, setTxnFilter] = useState(null);
+  const [selectedGoalId, setSelectedGoalId] = useState(null);
 
   // ── Derived state ─────────────────────────────────────────────────────────
-  const isPro          = user === 'sarah';
-  const accounts       = isPro ? sarahAccounts       : rafiqAccounts;
-  const budgets        = budgetData[user];
-  const goals          = goalData[user];
-  const transactions   = txnData[user];
-  const aiData         = isPro ? sarahResponses      : rafiqResponses;
-  const unreadCount    = notifs.filter(n => !n.isRead).length;
+  const isPro = user === 'sarah';
+  const accounts = accountData[user];
+  const budgets = budgetData[user];
+  const goals = goalData[user];
+  const transactions = txnData[user];
+  const aiData = isPro ? sarahResponses : rafiqResponses;
+  const unreadCount = notifs.filter(n => !n.isRead).length;
 
   // ── Navigation ────────────────────────────────────────────────────────────
   function navigate(screenName, params = {}) {
     if (params.account !== undefined) {
       setSelectedAccount(params.account);
     }
+    if (params.txnFilter !== undefined) {
+      setTxnFilter(params.txnFilter);
+    }
+    if (params.selectedGoal !== undefined) {
+      setSelectedGoalId(params.selectedGoal?.id || null);
+    }
     setScreen(screenName);
   }
 
   // ── Modal helpers ─────────────────────────────────────────────────────────
-  function openModal(type)  { setShowModal(type); }
-  function closeModal()     { setShowModal(null); }
+  function openModal(type) { setShowModal(type); }
+  function closeModal() { setShowModal(null); }
 
   // ── Transactions ──────────────────────────────────────────────────────────
   function addTransaction(txn) {
@@ -137,6 +157,41 @@ export function AppProvider({ children }) {
     }));
   }
 
+  // ── Update Account Balance ────────────────────────────────────────────────
+  function updateAccountBalance(accountId, newBalance) {
+    setAccountData(prev => ({
+      ...prev,
+      [user]: prev[user].map(acc =>
+        acc.id === accountId ? { ...acc, balance: newBalance } : acc
+      ),
+    }));
+  }
+
+  // ── Edit Budget ───────────────────────────────────────────────────────────
+  function editBudget(budgetId, updates) {
+    setBudgetData(prev => ({
+      ...prev,
+      [user]: prev[user].map(b =>
+        b.id === budgetId ? { ...b, ...updates } : b
+      ),
+    }));
+  }
+
+  // ── Delete Budget ─────────────────────────────────────────────────────────
+  function deleteBudget(budgetId) {
+    setBudgetData(prev => ({
+      ...prev,
+      [user]: prev[user].filter(b => b.id !== budgetId),
+    }));
+  }
+
+  // ── Get Account Commitments ───────────────────────────────────────────────
+  function getAccountCommitments(accountId) {
+    const linkedGoals = goals.filter(g => g.accountId === accountId);
+    const totalCommitted = linkedGoals.reduce((sum, g) => sum + g.currentAmount, 0);
+    return { linkedGoals, totalCommitted };
+  }
+
   // ── User switching (dev helper) ───────────────────────────────────────────
   function switchUser(newUser) {
     setUser(newUser);
@@ -145,10 +200,13 @@ export function AppProvider({ children }) {
     setShowModal(null);
     setShowYearInReview(false);
     setSelectedTransaction(null);
+    setPendingTransaction(null);
+    setTxnFilter(null);
+    setSelectedGoalId(null);
     setChatHistory([
       { role: 'ai', text: 'Hi! I am your AI Financial Coach. I analyze your spending, budgets, and goals to help you make smarter money decisions. What would you like to know?' }
     ]);
-    setAiQuestionsLeft(2);
+    setAiQuestionsLeft(20);
   }
 
   // ── Context value ─────────────────────────────────────────────────────────
@@ -170,6 +228,14 @@ export function AppProvider({ children }) {
     setCurrentAdIndex,
     selectedTransaction,
     setSelectedTransaction,
+    pendingTransaction,
+    setPendingTransaction,
+    pendingCoachPrompt,
+    setPendingCoachPrompt,
+    txnFilter,
+    setTxnFilter,
+    selectedGoalId,
+    setSelectedGoalId,
 
     // derived
     isPro,
@@ -196,6 +262,10 @@ export function AppProvider({ children }) {
     addGoalContribution,
     addGoal,
     addBudget,
+    editBudget,
+    deleteBudget,
+    updateAccountBalance,
+    getAccountCommitments,
     switchUser,
   };
 

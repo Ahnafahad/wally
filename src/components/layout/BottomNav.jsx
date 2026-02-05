@@ -11,11 +11,11 @@ import * as Icons from '../shared/Icons';
 
 // ─── Tab definitions ─────────────────────────────────────────────────────────
 const TABS = [
-  { id: 'dashboard', label: 'Home',     Icon: Icons.Home           },
-  { id: 'reports',   label: 'Analysis', Icon: Icons.BarChart2      },
-  { id: 'FAB',       label: '',         Icon: Icons.Plus           },   // centre FAB
-  { id: 'goals',     label: 'Goals',    Icon: Icons.Target         },
-  { id: 'coach',     label: 'Coach',    Icon: Icons.MessageCircle  },
+  { id: 'dashboard',     label: 'Home',     Icon: Icons.Home           },
+  { id: 'reports',       label: 'Analysis', Icon: Icons.BarChart2      },
+  { id: 'FAB',           label: '',         Icon: Icons.Plus           },   // centre FAB
+  { id: 'budget',        label: 'Budget',   Icon: Icons.Wallet         },
+  { id: 'coach',         label: 'Coach',    Icon: Icons.MessageCircle  },
 ];
 
 // ─── Component ───────────────────────────────────────────────────────────────
