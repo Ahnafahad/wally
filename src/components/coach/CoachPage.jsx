@@ -132,6 +132,18 @@ Keep responses brief (2-3 sentences), actionable, and use Bangladeshi Taka (৳)
     ]);
     useAiQuestion();
 
+    // ── easter egg: founder code ──
+    if (/can\s+i\s+buy\s+ismail\s+ali/i.test(questionText)) {
+      setTimeout(() => {
+        setChatHistory(prev => {
+          const c = [...prev];
+          c[c.length - 1] = { role: 'ai', text: "😄 Ismail Ali, our founder? Well, you can **buy** him for ৳1,000 or **rent** him per night for ৳100. Quite the bargain, don't you think? (Just kidding — he's priceless and not for sale!)" };
+          return c;
+        });
+      }, 1200);
+      return;
+    }
+
     // ── preset-question match ──
     const presetKey = Object.keys(aiData).find(k =>
       aiData[k].question.toLowerCase() === questionText.toLowerCase()
